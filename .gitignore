@@ -1,0 +1,44 @@
+# --- WortRadar: lokale Daten & Geheimnisse ---
+# Laufzeit-Datenbank (enthält persönliche Vokabel-/Lerndaten) – nie pushen
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Streamlit-Secrets (API-Keys: Groq/Gemini/Claude, Supabase) – NIEMALS pushen
+.streamlit/secrets.toml
+.env
+.env.*
+
+# Persönliche Notizen / lokale Ablage
+Archiv/
+Fehler.txt
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtuelle Umgebungen
+.venv/
+venv/
+env/
+ENV/
+
+# --- spaCy-Modelle (groß, per `python -m spacy download` lokal holen) ---
+en_core_web_sm/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store

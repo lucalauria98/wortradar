@@ -1,0 +1,11 @@
+Why I Am Building a Weed-Removal Robot in My Garage
+
+Last spring I watched my neighbour spend an entire weekend crouching on the pavement, scraping weeds out of the cracks with a rusty screwdriver. It looked tedious, repetitive and slightly absurd - in other words, a perfect job for a robot.
+
+So I started building one. The chassis is a simple differential drive with two geared motors, chosen for traction rather than speed. A downward-facing camera feeds images to a small neural network that distinguishes dandelions and moss from harmless pebbles and shadows. When the classifier is confident, a rotating brush descends and grinds the intruder away.
+
+The hardest part is not the mechanics but the perception. Sidewalks are full of deceptive textures: chewing gum, oil stains, mottled concrete. Early prototypes attacked a sticker with admirable ferocity. Each failure taught me something about thresholds, lighting and the stubborn ambiguity of the real world.
+
+There were moments of pure serendipity too. A cheap ultrasonic sensor, bought for obstacle avoidance, turned out to be excellent at detecting curbs. A firmware bug that made the robot pivot in slow circles accidentally produced the most thorough cleaning pattern I had tested so far.
+
+Will this contraption ever be profitable? Probably not. But every weekend it gets a little more autonomous, and I get a little better at robotics. That trade alone is worth the scraped knuckles and the burnt motor drivers.

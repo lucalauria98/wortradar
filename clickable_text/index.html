@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    padding: 4px 0;
+    background: transparent;
+    color: #e8e8e8;
+    font-size: 1.05rem;
+    font-family: "Source Sans Pro", sans-serif;
+}
+.wr-line {
+    border-left: 4px solid #444;
+    padding: 5px 10px;
+    margin: 3px 0;
+    line-height: 2.3;
+}
+.wr-ts { color: #888; font-family: monospace; font-size: 0.8rem; margin-right: 6px; }
+
+/* ── Jedes Wort: voll gefuellte Box, weisser Text ── */
+.wr-word {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 1px 7px;
+    margin: 2px 2px;
+    color: #ffffff;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: filter 0.1s, opacity 0.1s;
+}
+.wr-known   { background: #2e9e5b; }   /* gruen  = kenne ich */
+.wr-unknown { background: #d64545; }   /* rot    = kenne ich nicht */
+
+[data-lid]       { cursor: pointer; }
+[data-lid]:hover { filter: brightness(1.15); }
+[data-lid].flash { opacity: 0.4; }
+
+/* ── Schwebender „kenne ich nicht"-Knopf neben der Markierung ── */
+#floatmark {
+    position: absolute;
+    z-index: 9999;
+    display: none;
+    background: #d64545;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 11px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+    white-space: nowrap;
+}
+#floatmark:hover { filter: brightness(1.12); }
+</style>
+</head>
+<body>
+<button id="floatmark">❓ kenne ich nicht</button>
+<div id="root"></div>
+<script>
+/* ── Streamlit-Kommunikations-Shim (muss selbst definiert werden) ── */
+var Streamlit = {
+    setComponentReady: function () {
+        window.parent.postMessage(
+            { isStreamlitMessage: true, type: "streamlit:componentReady", apiVersion: 1 },
+            "*"
+        );
+    },
+    setFrameHeight: function (h) {
+        window.parent.postMessage(
+            { isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: h },
+            "*"
+        );
+    },
+    setComponentValue: function (v) {
+        window.parent.postMessage(
+            { isStreamlitMessage: true, type: "streamlit:setComponentValue",
+              value: v, dataType: "json" },
+            "*"
+        );
+    }
+};
+
+function updateHeight() {
+    var h = document.getElementById("root").scrollHeight;
+    if (h > 0) Streamlit.setFrameHeight(h + 50);
+}
+
+var _cnt = 0;
+var floatbtn = document.getElementById("floatmark");
+
+/* ── Einzelklick auf ein Wort: Farbe umdrehen (gruen<->rot) ── */
+document.addEventListener("click", function (e) {
+    if (e.target.id === "floatmark") return;
+    var el = e.target.closest("[data-lid]");
+    if (!el) return;
+    /* Nur reagieren, wenn KEINE echte Textauswahl aktiv ist */
+    var sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.toString().trim().length > 1) return;
+    var lid = el.getAttribute("data-lid");
+    var wasKnown = el.classList.contains("wr-known");
+    el.classList.toggle("wr-known");
+    el.classList.toggle("wr-unknown");
+    Streamlit.setComponentValue({ lemma_id: parseInt(lid),
+                                  was_known: wasKnown, click_id: ++_cnt });
+});
+
+/* ── Markierung (Wort oder ganze Passage) -> Knopf einblenden ── */
+function selectionWords() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return [];
+    var ids = [];
+    document.querySelectorAll("[data-lid]").forEach(function (el) {
+        if (sel.containsNode(el, true)) ids.push(parseInt(el.getAttribute("data-lid")));
+    });
+    return ids;
+}
+
+function positionButton() {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.toString().trim().length === 0) {
+        floatbtn.style.display = "none";
+        return;
+    }
+    if (selectionWords().length === 0) { floatbtn.style.display = "none"; return; }
+    var rect = sel.getRangeAt(0).getBoundingClientRect();
+    floatbtn.style.display = "block";
+    /* iframe scrollt nicht intern -> getBoundingClientRect ist die Position
+       im Inhalt; Knopf knapp ueber das Ende der Markierung legen. */
+    var top = rect.top - floatbtn.offsetHeight - 6;
+    if (top < 0) top = rect.bottom + 6;
+    var left = rect.left + rect.width / 2 - floatbtn.offsetWidth / 2;
+    left = Math.max(4, Math.min(left, window.innerWidth - floatbtn.offsetWidth - 4));
+    floatbtn.style.top = top + "px";
+    floatbtn.style.left = left + "px";
+}
+
+document.addEventListener("mouseup", function () { setTimeout(positionButton, 0); });
+document.addEventListener("selectionchange", function () {
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed) floatbtn.style.display = "none";
+});
+
+/* mousedown + preventDefault -> die Textauswahl bleibt beim Klick erhalten */
+floatbtn.addEventListener("mousedown", function (e) {
+    e.preventDefault();
+    var ids = selectionWords();
+    if (ids.length) {
+        Streamlit.setComponentValue({ action: "mark", lemma_ids: ids,
+                                      click_id: ++_cnt });
+    }
+    var sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    floatbtn.style.display = "none";
+});
+
+/* ── Streamlit render-Nachrichten empfangen ── */
+window.addEventListener("message", function (ev) {
+    if (!ev.data || ev.data.type !== "streamlit:render") return;
+    var args = ev.data.args || {};
+    document.getElementById("root").innerHTML = args.html || "";
+    floatbtn.style.display = "none";
+    updateHeight();
+    requestAnimationFrame(function () {
+        updateHeight();
+        setTimeout(updateHeight, 350);
+    });
+});
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () { Streamlit.setComponentReady(); });
+} else {
+    Streamlit.setComponentReady();
+}
+
+if (typeof ResizeObserver !== "undefined") {
+    new ResizeObserver(updateHeight).observe(document.getElementById("root"));
+}
+</script>
+</body>
+</html>
