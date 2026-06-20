@@ -377,6 +377,12 @@ STATUS_FROM_DE = {v: k for k, v in STATUS_DE.items()}
 def deck_rows(doc_id: int, include_unsure: bool) -> list[dict]:
     params = vm.load_model()
     rows = []
+    # Ein Lemma kann sowohl als Inhaltswort als auch (vom Nutzer markiert) als
+    # Funktions-/Eigenname im selben Doc auftauchen -> selbe globale lemma_id.
+    # Im Deck (= eine Vokabel = eine Karte) darf es nur EINMAL stehen, sonst
+    # bekommt der DataFrame-Index Duplikate und data_editor wirft beim
+    # Rueckschreiben "truth value of a Series is ambiguous".
+    seen: set[int] = set()
     for r in db.doc_lemma_summary(doc_id):
         p = vm.effective_p(r["status"], r["zipf"] or 0.0, params)
         # Gleiche Schwelle wie die rote Wortfarbe im Text (p < 0.5 = "kenne
@@ -384,6 +390,7 @@ def deck_rows(doc_id: int, include_unsure: bool) -> list[dict]:
         in_deck = r["status"] in ("unknown", "learning") or (
             include_unsure and r["status"] is None and p < 0.5)
         if in_deck:
+            seen.add(r["lemma_id"])
             rows.append({
                 "lemma_id": r["lemma_id"], "Wort": r["lemma"],
                 "Uebersetzung": r["translation"] or "",
@@ -393,6 +400,9 @@ def deck_rows(doc_id: int, include_unsure: bool) -> list[dict]:
     # Vom Nutzer explizit angeklickte Funktionswoerter zusaetzlich aufnehmen
     # (Coverage zaehlt sie weiter als bekannt - hier nur fuers Lernen).
     for r in db.doc_marked_function_lemmas(doc_id):
+        if r["lemma_id"] in seen:
+            continue
+        seen.add(r["lemma_id"])
         rows.append({
             "lemma_id": r["lemma_id"], "Wort": r["lemma"],
             "Uebersetzung": r["translation"] or "",
