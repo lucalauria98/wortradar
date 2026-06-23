@@ -457,7 +457,7 @@ def doc_lemma_summary(doc_id: int) -> list:
                LEFT JOIN knowledge k ON k.lemma_id = l.id AND k.user_id = ?
                LEFT JOIN dictionary d ON d.lemma = l.lemma
                WHERE t.doc_id = ? AND t.kind = 'content'
-               GROUP BY l.id
+               GROUP BY l.id, l.lemma, l.zipf, k.status, k.fsrs, k.due, d.de
                ORDER BY cnt DESC, l.zipf DESC""",
             (_uid(), doc_id),
         ).fetchall()
@@ -478,7 +478,7 @@ def doc_marked_function_lemmas(doc_id: int) -> list:
                LEFT JOIN dictionary d ON d.lemma = l.lemma
                WHERE t.doc_id = ? AND t.kind IN ('function', 'proper')
                      AND k.status IN ('unknown', 'learning')
-               GROUP BY l.id
+               GROUP BY l.id, l.lemma, l.zipf, k.status, k.fsrs, k.due, d.de
                ORDER BY cnt DESC, l.zipf DESC""",
             (_uid(), doc_id),
         ).fetchall()
@@ -496,7 +496,7 @@ def all_doc_content_counts() -> list:
                JOIN documents doc    ON doc.id = t.doc_id AND doc.user_id = ?
                LEFT JOIN knowledge k ON k.lemma_id = l.id AND k.user_id = ?
                WHERE t.kind = 'content'
-               GROUP BY t.doc_id, l.id""",
+               GROUP BY t.doc_id, l.id, l.lemma, l.zipf, k.status""",
             (uid, uid),
         ).fetchall()
 
@@ -550,8 +550,12 @@ def due_cards(doc_id: int | None = None, include_new: bool = True) -> list:
     """Faellige Lernkarten, optional auf ein Dokument beschraenkt."""
     now = now_iso()
     uid = _uid()
+    # (k.due IS NULL) als Sortier-Spalte: bei SELECT DISTINCT muss jede
+    # ORDER-BY-Expression in der SELECT-Liste stehen (Postgres-Pflicht).
+    # 0/false (faellig) vor 1/true (neu) -> in SQLite und Postgres gleich.
     base = """SELECT DISTINCT l.id AS lemma_id, l.lemma, l.zipf,
-                     k.status, k.fsrs, k.due, d.de AS translation
+                     k.status, k.fsrs, k.due, d.de AS translation,
+                     (k.due IS NULL) AS due_is_null
               FROM lemmas l
               JOIN knowledge k       ON k.lemma_id = l.id AND k.user_id = ?
               LEFT JOIN dictionary d ON d.lemma = l.lemma
@@ -559,7 +563,7 @@ def due_cards(doc_id: int | None = None, include_new: bool = True) -> list:
               WHERE ( (k.status='learning' AND k.due IS NOT NULL AND k.due <= ?)
                       {newpart} )
               {docfilter}
-              ORDER BY k.due IS NULL, k.due"""
+              ORDER BY due_is_null, k.due"""
     newpart = "OR (k.status='unknown')" if include_new else ""
     join, docfilter, params = "", "", [uid, now]
     if doc_id is not None:
