@@ -39,7 +39,7 @@ db.init_db()
 import os  # noqa: E402
 try:
     for _k in ("GROQ_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY",
-               "SUPABASE_URL", "SUPABASE_ANON_KEY"):
+               "SUPABASE_URL", "SUPABASE_ANON_KEY", "DATABASE_URL"):
         if _k in st.secrets:
             os.environ.setdefault(_k, str(st.secrets[_k]))
 except Exception:  # noqa: BLE001 - keine secrets.toml lokal: einfach ignorieren
@@ -894,8 +894,12 @@ def page_settings():
 # ---------------------------------------------------------------- Login ----
 def login_gate():
     """Sichert die App ab, sobald Supabase konfiguriert ist. Ohne Config:
-    Entwicklungsmodus ohne Login (App laeuft direkt)."""
-    if not auth.is_configured() or st.session_state.get("user"):
+    Entwicklungsmodus ohne Login (App laeuft direkt).
+    Setzt user_id im DB-Kontext - bei jedem Render, damit der ContextVar
+    im Streamlit-Thread aktuell bleibt."""
+    user = st.session_state.get("user")
+    db.set_current_user(user["id"] if user else None)
+    if not auth.is_configured() or user:
         return
     st.markdown("<div style='max-width:420px;margin:6vh auto'>",
                 unsafe_allow_html=True)
