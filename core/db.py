@@ -12,6 +12,7 @@ import contextvars
 import json
 import os
 import sqlite3
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -104,19 +105,50 @@ class _Cur:
         return self._r.lastrowid  # nur SQLite; Postgres nutzt RETURNING id
 
 
+# Postgres-Verbindungspool: hält Verbindungen offen, statt pro Query neu zu
+# verbinden. Das spart den teuren TCP+SSL-Handshake zum Supabase-Pooler
+# (~100-200 ms) bei jeder einzelnen Abfrage - entscheidend für die gefühlte
+# Geschwindigkeit, da Streamlit bei jedem Klick mehrere Queries absetzt.
+_pg_pool = None
+_pool_lock = threading.Lock()
+
+
+def _get_pool():
+    global _pg_pool
+    if _pg_pool is None:
+        with _pool_lock:
+            if _pg_pool is None:
+                import psycopg2.pool  # noqa: PLC0415
+                _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                    minconn=1, maxconn=16, dsn=_pg_url(),
+                    # Idle-Verbindungen am Leben halten (Supabase trennt sonst):
+                    keepalives=1, keepalives_idle=30,
+                    keepalives_interval=10, keepalives_count=3,
+                    connect_timeout=10,
+                )
+    return _pg_pool
+
+
 @contextmanager
 def get_conn():
     if _is_pg():
-        import psycopg2  # noqa: PLC0415
-        conn = psycopg2.connect(_pg_url())
+        pool = _get_pool()
+        conn = pool.getconn()
+        broken = False
         try:
             yield _Conn(conn, pg=True)
             conn.commit()
         except Exception:
-            conn.rollback()
+            broken = True
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001 - Verbindung evtl. schon tot
+                pass
             raise
         finally:
-            conn.close()
+            # Defekte Verbindung schließen statt in den Pool zurückgeben,
+            # damit der nächste Aufruf eine frische bekommt.
+            pool.putconn(conn, close=broken)
     else:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(DB_PATH)

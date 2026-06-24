@@ -31,7 +31,15 @@ from core.importers import parse_pasted, parse_upload  # noqa: E402
 from core.nlp import engine_name  # noqa: E402
 from core.pipeline import ingest_document  # noqa: E402
 
-db.init_db()
+@st.cache_resource
+def _ensure_db():
+    """Schema nur EINMAL pro Prozess anlegen - nicht bei jedem Rerun.
+    Spart bei Postgres pro Klick mehrere CREATE-TABLE-Roundtrips."""
+    db.init_db()
+    return True
+
+
+_ensure_db()
 
 # Online-Deployment: in Streamlit Secrets hinterlegte Keys auch als
 # Umgebungsvariablen bereitstellen (dictionary.get_ai_config liest os.environ).
@@ -772,13 +780,18 @@ def page_settings():
 
     st.subheader("🤖 Übersetzung (KI)")
     st.caption("Übersetzt deine Vokabeln **im Kontext** der jeweiligen Zeile "
-               "(z. B. „country lane“ → „Landstraße“). Ein Server-Key reicht "
-               "für alle Nutzer – beim Deployment per Umgebungsvariable setzen.")
+               "(z. B. „country lane“ → „Landstraße“). Standardmäßig nutzt du "
+               "den **geteilten Schlüssel der App** – du musst nichts tun. "
+               "Optional kannst du unten deinen **eigenen** Key eintragen "
+               "(z. B. wenn der geteilte gerade am Limit ist).")
     cfg = dictionary.get_ai_config()
+    own_key = bool(db.meta_get("groq_key") or db.meta_get("gemini_key")
+                   or db.meta_get("api_key"))
     if cfg["provider"]:
-        st.success(f"Aktiv: **{cfg['provider'].title()}** ({cfg['model']}). "
-                   "Jede Übersetzung wird gecacht – jedes Wort kostet höchstens "
-                   "einmal einen Aufruf.")
+        quelle = "dein eigener Schlüssel" if own_key else "geteilter App-Schlüssel"
+        st.success(f"✅ Übersetzung aktiv: **{cfg['provider'].title()}** "
+                   f"({cfg['model']}) – {quelle}. Jede Übersetzung wird gecacht "
+                   "und steht danach allen Nutzern zur Verfügung.")
         if st.button("🧪 Übersetzung testen"):
             try:
                 with st.spinner("Teste …"):
@@ -797,20 +810,26 @@ def page_settings():
         ["⭐ Groq (gratis, empfohlen)", "Gemini (gratis)", "Claude / OpenAI"])
     with tab_groq:
         st.markdown(
+            "**Optional – nur falls du deinen eigenen Schlüssel nutzen willst.** "
+            "Ohne Eintrag läuft alles über den geteilten App-Schlüssel.\n\n"
             "**Groq** hat die besten Gratis-Limits (schnell, ~30 Anfragen/Min, "
             "**keine Kreditkarte**) und läuft Llama 3.3 70B.\n\n"
             "1. Kostenlosen Key holen: `https://console.groq.com/keys`\n"
             "2. Hier einfügen, speichern, oben testen.")
-        qkey = st.text_input("Groq API-Key", type="password",
+        qkey = st.text_input("Dein Groq API-Key (optional)", type="password",
                              value=db.meta_get("groq_key") or "")
         qmodel = st.text_input("Groq-Modell", value=db.meta_get("groq_model")
                                or dictionary.GROQ_DEFAULT_MODEL)
-        if st.button("Groq speichern", type="primary"):
+        cols = st.columns(2)
+        if cols[0].button("Eigenen Key speichern", type="primary"):
             db.meta_set("groq_key", qkey.strip())
             db.meta_set("groq_model", qmodel.strip() or dictionary.GROQ_DEFAULT_MODEL)
-            st.success("Gespeichert.")
+            st.success("Gespeichert – ab jetzt nutzt du deinen eigenen Schlüssel.")
             st.rerun()
-        st.caption("Deployment: Umgebungsvariable `GROQ_API_KEY` setzen.")
+        if cols[1].button("Eigenen Key entfernen"):
+            db.meta_set("groq_key", "")
+            st.success("Entfernt – du nutzt wieder den geteilten App-Schlüssel.")
+            st.rerun()
     with tab_gem:
         st.markdown("Google **Gemini Flash**, ebenfalls gratis (Google-Konto "
                     "nötig). Key: `https://aistudio.google.com/app/apikey`")

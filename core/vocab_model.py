@@ -34,7 +34,9 @@ BANDS = [
     (3.6, 4.2), (3.0, 3.6), (2.4, 3.0), (1.7, 2.4),
 ]
 WORDS_PER_BAND = 6
-PSEUDO_PER_TEST = 10
+# Genug für eine stabile Rate-Quote (g), aber nicht so viele, dass der Test
+# sich nach "lauter Quatschwörtern" anfühlt (Nutzer-Feedback).
+PSEUDO_PER_TEST = 6
 
 # Defaults, solange kein Test gemacht wurde (mittlerer Lerner, deutlich
 # als "unkalibriert" markiert in der UI)
